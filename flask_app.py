@@ -7,11 +7,13 @@ from vertexai.preview.vision_models import ImageGenerationModel
 import vertexai
 import typing
 import IPython.display
-from dotenv import load_dotenv
 import os
 import json
 from dotenv import load_dotenv
 import base64
+from google.genai import types
+from google import genai
+
 from portia import (
     Config,
     LLMModel,
@@ -102,6 +104,83 @@ def save_image(image: PIL_Image.Image, file_path: str) -> None:
     image.save(file_path, format='PNG')  # Save image to the specified path
     print(f"Image saved as {file_path}")
 
+
+# Combained image
+def generate(user_image1,user_image2,final_prompt):
+    client = genai.Client(
+        vertexai=True,
+        project="single-patrol-456519-c3",
+        location="us-central1",
+    )
+    
+    msg1_image1 = types.Part.from_bytes(
+        data=base64.b64decode((user_image1)),
+    mime_type="image/png",
+    )
+
+    msg1_image2 = types.Part.from_bytes(
+    data=base64.b64decode((user_image2)),
+    mime_type="image/png",
+    )   
+
+    msg1_text1=types.Part.from_text(text=final_prompt)
+
+    model = "gemini-2.0-flash-exp"
+    contents = [
+    types.Content(
+    role="user",
+    parts=[
+        msg1_image1,
+        msg1_image2,
+        msg1_text1
+        ]
+        ),
+    ]
+    
+    generate_content_config = types.GenerateContentConfig(
+    temperature = 0.2,
+    top_p = 0.95,
+    seed = 0,
+    max_output_tokens = 1024,
+    response_modalities = ["TEXT", "IMAGE"],
+    safety_settings = [types.SafetySetting(
+    category="HARM_CATEGORY_HATE_SPEECH",
+    threshold="OFF"
+    ),types.SafetySetting(
+    category="HARM_CATEGORY_DANGEROUS_CONTENT",
+    threshold="OFF"
+    ),types.SafetySetting(
+    category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+    threshold="OFF"
+    ),types.SafetySetting(
+    category="HARM_CATEGORY_HARASSMENT",
+    threshold="OFF"
+    )],
+    )
+
+    image_bytes = None
+    for chunk in client.models.generate_content_stream(
+        model = model,
+        contents = contents,
+        config = generate_content_config,
+        ):
+        for candidate in chunk.candidates:
+            for part in candidate.content.parts:
+                if hasattr(part, "inline_data") and part.inline_data:
+                    image_bytes = part.inline_data.data
+                elif hasattr(part, "text") and part.text:
+                    print("Text:", part.text)
+    
+    if image_bytes:
+        image = PIL_Image.open(BytesIO(image_bytes))
+        image.save("generated_meme.png")
+        return base64.b64encode(image_bytes).decode("utf-8")
+    else:
+        return 'no image'
+    
+    
+    
+# ============================================================ Main function =========================================
 # Load environment variables if needed
 load_dotenv()
 
@@ -121,10 +200,12 @@ def generate_meme():
     # base_prompt = request.args.get('prompt')
     data = request.get_json()
 
-    if not data or 'prompt' not in data:
-        return jsonify({"error": "Prompt is required in JSON body"}), 400
+    if not data or 'prompt' not in data or 'image_data_1' not in data or 'image_data_2' not in data:
+        return jsonify({"error": "Prompt and both image data are required in JSON body"}), 400
 
     base_prompt = data['prompt']
+    image_data_1 = data['image_data_1']
+    image_data_2 = data['image_data_2']
 
     if not base_prompt:
         return jsonify({"error": "Prompt is required"}), 400
@@ -134,10 +215,9 @@ def generate_meme():
     # =============================================== unlock ==========================
     tweets_data=hash_trend()
 #     tweets_data='''
-#         - tweet trend or anything similar: Kendrick Lamar's diss track titled "EUPHORIA"
-# - meaning of the trend or similar: a multi-layered diss track aimed at Drake, showcasing Lamar's lyrical prowess and strategic approach to hip-hop rivalries.
-# base_prompt: Make something funny from this trend!
-# '''
+#          tweet trend or anything similar: $MIND with keywords like Eradicate, Omnipotent, Entropy
+# - meaning of the trend or similar: essence of user interests, intentions, or current focal points. Examining recurring themes unveils trends.Create a funny meme from these images
+#         '''
     if tweets_data=='':
         return jsonify({"error": "No tweets data, may be api limit exceed"}), 500
     else:
@@ -145,7 +225,7 @@ def generate_meme():
         base_X_prompt_= '''
                            
                                                     ---
-                            based on the tweets try to find out something.
+                            \n\nbased on the tweets try to find out something.
                             Return the output in this format:
                             - tweet trend or anything similar: (only one)
                             - meaning of the trend or similar (only one)
@@ -174,6 +254,9 @@ def generate_meme():
             # Generate images using the prompt
             final_prompt=trending_topic+str(base_prompt)
             print('final_prompt=======================',final_prompt)
+
+            # =================================================================================
+            # Text to image generation
             images = generation_model.generate_images(
                 prompt=final_prompt,
                 number_of_images=1,  # Only generate one image for simplicity
@@ -183,28 +266,35 @@ def generate_meme():
                 safety_filter_level="",
                 add_watermark=True,
             )
-            print(f"Generated images: {images}") 
-            # Get the generated image
-            if not images:
-                return jsonify({"error": "Image generation failed or returned no results."}), 500
-            generated_image = images[0]._pil_image  # Assuming the image is returned as a PIL image
 
-            # Save the image to a file
-            file_path = 'generated_meme_image.png'
-            save_image(generated_image, file_path)
+            encoded_image=generate(image_data_1,image_data_2,final_prompt)
 
-            # Convert the image to bytes for API response
-            image_bytes = image_to_bytes(generated_image)
+            # =========================================================
+            # print(f"Generated images: {images}") 
+            # # Get the generated image
+            # if not images:
+            #     return jsonify({"error": "Image generation failed or returned no results."}), 500
+            # generated_image = images[0]._pil_image  # Assuming the image is returned as a PIL image
 
-            encoded_image = base64.b64encode(image_bytes).decode('utf-8')
-            return jsonify({"image_data": encoded_image})
+            # # Save the image to a file
+            # file_path = 'generated_meme_image.png'
+            # save_image(generated_image, file_path)
+
+            # # Convert the image to bytes for API response
+            # image_bytes = image_to_bytes(generated_image)
+
+            # encoded_image = base64.b64encode(image_bytes).decode('utf-8')
+            if encoded_image=='no image':
+                return jsonify({"message":'Updated!' }), 200
+            else:
+                return jsonify({"image_data": encoded_image}), 500
 
             # Return the image as a response
             # return send_file(BytesIO(image_bytes), mimetype='image/png', as_attachment=True, download_name='generated_meme_image.png')
 
 
     
-# Endpoint to generate meme image based on prompt
+# =============================================== Endpoint to generate meme image based on prompt =======================
 @app.route('/base_trend', methods=['GET'])
 def base_trend():
     global base_prompt
@@ -220,23 +310,10 @@ def base_trend():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
+
+# =============================================== Endpoint to generate meme image based on prompt =======================
+
 if __name__ == '__main__':
     # Run the Flask app on port 5000
     app.run(debug=True)
 
-
-
-# # Define the base URL of your Flask API
-# base_url = "http://127.0.0.1:5000/generate_meme"
-
-# # Define a prompt for testing
-# test_prompt = "Create a funny meme about Trump and China trade tariffs, with vibrant colors and witty dialogue."
-
-# # Encode the prompt into the query parameter (URL encoding)
-# params = {
-#     "prompt": test_prompt
-# }
-
-# # Send a GET request to the Flask API with the prompt
-# response = requests.get(base_url, params=params)
