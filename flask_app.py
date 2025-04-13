@@ -44,11 +44,11 @@ def generate_meme():
         base_prompt=base_prompt
 
     # =============================================== unlock ==========================
-    tweets_data=hash_trend()
-#     tweets_data='''
-#          tweet trend or anything similar: $MIND with keywords like Eradicate, Omnipotent, Entropy
-# - meaning of the trend or similar: essence of user interests, intentions, or current focal points. Examining recurring themes unveils trends.Create a funny meme from these images
-#         '''
+    # tweets_data=hash_trend()
+    tweets_data='''
+     - tweet trend or anything similar: $MIND
+- meaning of the trend or similar: Trending topics on X(Twitter) are determined by significant increases in popularity of a specific topic or hashtag.Create a funny meme from these images
+'''
     if tweets_data=='':
         return jsonify({"error": "No tweets data, may be api limit exceed"}), 500
     else:
