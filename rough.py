@@ -20,7 +20,7 @@ payload = {
 }
 
 # Send POST request to the Flask server
-response = requests.post("http://127.0.0.1:5000/generate_meme", json=payload)
+response = requests.post("http://zora.ai-being.co.uk/generate_meme", json=payload)
 
 # Handle the response
 if response.status_code == 200:
